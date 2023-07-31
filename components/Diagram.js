@@ -1,5 +1,6 @@
-import ReactFlow, { Controls, Background } from 'reactflow';
+import ReactFlow, {Controls, Background, useNodesState, useEdgesState, addEdge} from 'reactflow';
 import 'reactflow/dist/style.css';
+import {useCallback, useRef, useState} from "react";
 
 const data = {
   "name": "InsuranceClaim",
@@ -117,20 +118,31 @@ function convertToReactFlowJson(inputJson) {
   const nodes = [];
   const edges = [];
 
-  inputJson.steps.forEach((step) => {
+  const nodePositions = {
+    x: 50,
+    y: 50,
+  };
+
+  const edgePositionOffset = 150;
+
+  inputJson.steps.forEach((step, index) => {
     const nodeId = `node-${step.step}`;
     const node = {
       id: nodeId,
-      type: step.type === 'finished' ? 'output' : 'input',
+      //type: step.type === 'finished' ? 'output' : 'input',
       data: {
-        label: step.prompt || step.activity,
+        label: step.type === 'finished' ? 'Finished' : step.prompt || step.activity,
         resourceUrl: step.resourceUrl,
         entity: step.entity,
         variable: step.variable,
         items: step.items,
         condition: step.condition,
       },
-      position: { x: 0, y: 0 }, // You can adjust the position as per your requirement
+      position: {
+        x: nodePositions.x + index * edgePositionOffset,
+        y: nodePositions.y + index * edgePositionOffset,
+      },
+      draggable: true,
     };
 
     nodes.push(node);
@@ -153,10 +165,52 @@ function convertToReactFlowJson(inputJson) {
 
 function Diagram() {
   const model = convertToReactFlowJson(data);
-  console.log(model);
+  const reactFlowWrapper = useRef(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState(model.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [reactFlowInstance, setReactFlowInstance] = useState(null);
+
+  const onDragOver = useCallback((event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (event) => {
+      event.preventDefault();
+
+      const reactFlowBounds = reactFlowWrapper.current.getBoundingClientRect();
+      const type = event.dataTransfer.getData('application/reactflow');
+
+      // check if the dropped element is valid
+      if (typeof type === 'undefined' || !type) {
+        return;
+      }
+
+      const position = reactFlowInstance.project({
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top,
+      });
+      const newNode = {
+        id: getId(),
+        type,
+        position,
+        data: { label: `${type} node` },
+      };
+
+      setNodes((nds) => nds.concat(newNode));
+    },
+    [reactFlowInstance]
+  );
+
   return (
-    <div style={{ height: '100%', width: '1200px' }}>
-      <ReactFlow nodes={model.nodes} edges={model.edges}>
+    <div style={{ height: '100%', width: '100vw' }}>
+      <ReactFlow nodes={nodes} edges={model.edges} onNodesChange={onNodesChange}
+                 onEdgesChange={onEdgesChange}
+                 onInit={setReactFlowInstance}
+                 onDrop={onDrop}
+                 onDragOver={onDragOver}
+                 fitView>
         <Background />
         <Controls />
       </ReactFlow>
